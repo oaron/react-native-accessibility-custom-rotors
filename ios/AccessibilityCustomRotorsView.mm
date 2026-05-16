@@ -1,6 +1,7 @@
 #import "AccessibilityCustomRotorsView.h"
 
 #import <React/RCTConversions.h>
+#import <React/RCTLog.h>
 
 #import <react/renderer/components/AccessibilityCustomRotorsViewSpec/ComponentDescriptors.h>
 #import <react/renderer/components/AccessibilityCustomRotorsViewSpec/Props.h>
@@ -38,16 +39,20 @@ using namespace facebook::react;
 
   NSMutableArray<UIAccessibilityCustomRotor *> *nativeRotors = [NSMutableArray array];
 
+  RCTLogInfo(@"[CustomRotors] updateProps: %lu rotors", (unsigned long)newViewProps.rotors.size());
+
   for (const auto &rotor : newViewProps.rotors) {
     NSString *rotorName = [NSString stringWithUTF8String:rotor.name.c_str()];
 
     NSMutableArray<NSDictionary *> *items = [NSMutableArray array];
     for (const auto &item : rotor.items) {
+      NSString *testID = [NSString stringWithUTF8String:item.testID.c_str()];
       [items addObject:@{
-        @"testID" : [NSString stringWithUTF8String:item.testID.c_str()],
+        @"testID" : testID,
         @"label" : [NSString stringWithUTF8String:item.label.c_str()],
       }];
     }
+    RCTLogInfo(@"[CustomRotors]   rotor '%@' has %lu items", rotorName, (unsigned long)items.count);
 
     __weak AccessibilityCustomRotorsView *weakSelf = self;
     UIAccessibilityCustomRotor *nativeRotor = [[UIAccessibilityCustomRotor alloc]
@@ -82,13 +87,22 @@ using namespace facebook::react;
   NSMutableArray<UIView *> *resolved = [NSMutableArray arrayWithCapacity:items.count];
   NSMutableArray<NSString *> *labels = [NSMutableArray arrayWithCapacity:items.count];
   for (NSDictionary *item in items) {
-    UIView *view = [self findViewWithTestID:item[@"testID"] inside:_contentView];
+    // Walk from self — children may be mounted under `self.contentView`,
+    // a child component view, or directly under self depending on the RN
+    // version. Starting at self covers all of them.
+    UIView *view = [self findViewWithTestID:item[@"testID"] inside:self];
     if (view) {
       [resolved addObject:view];
       [labels addObject:item[@"label"]];
     }
   }
+  RCTLogInfo(@"[CustomRotors] resolved %lu / %lu items; self.subviews=%lu",
+             (unsigned long)resolved.count,
+             (unsigned long)items.count,
+             (unsigned long)self.subviews.count);
   if (resolved.count == 0) {
+    RCTLogInfo(@"[CustomRotors] nothing matched — dumping subview tree:");
+    [self _dumpTreeFrom:self depth:0];
     return nil;
   }
 
@@ -141,6 +155,25 @@ using namespace facebook::react;
     }
   }
   return nil;
+}
+
+- (void)_dumpTreeFrom:(UIView *)view depth:(NSInteger)depth
+{
+  NSString *pad = [@"" stringByPaddingToLength:(NSUInteger)depth * 2
+                                   withString:@" "
+                              startingAtIndex:0];
+  RCTLogInfo(@"[CustomRotors] %@%@ id='%@' a11y=%d label='%@'",
+             pad,
+             NSStringFromClass(view.class),
+             view.accessibilityIdentifier ?: @"",
+             view.isAccessibilityElement,
+             view.accessibilityLabel ?: @"");
+  if (depth > 8) {
+    return;
+  }
+  for (UIView *child in view.subviews) {
+    [self _dumpTreeFrom:child depth:depth + 1];
+  }
 }
 
 @end
