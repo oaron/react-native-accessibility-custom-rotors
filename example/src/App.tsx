@@ -126,7 +126,6 @@ export default function App() {
               <View
                 testID={`day-${f.id}`}
                 accessible
-                accessibilityRole="header"
                 accessibilityLabel={`${f.day}, ${f.condition}, high ${f.high}, low ${f.low}`}
               >
                 <Text style={styles.day}>
