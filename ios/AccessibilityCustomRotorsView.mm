@@ -11,7 +11,10 @@
 
 using namespace facebook::react;
 
-@implementation AccessibilityCustomRotorsView
+@implementation AccessibilityCustomRotorsView {
+  UILabel *_debugOverlay;
+  NSMutableArray<NSString *> *_debugLog;
+}
 
 + (ComponentDescriptorProvider)componentDescriptorProvider
 {
@@ -23,24 +26,52 @@ using namespace facebook::react;
   if (self = [super initWithFrame:frame]) {
     static const auto defaultProps = std::make_shared<const AccessibilityCustomRotorsViewProps>();
     _props = defaultProps;
-    // Don't touch self.contentView — RCTViewComponentView's default child
-    // mounting works fine; overriding it here was preventing the wrapper
-    // subtree from being walkable for accessibilityIdentifier lookup.
+
+    _debugLog = [NSMutableArray array];
+    _debugOverlay = [[UILabel alloc] init];
+    _debugOverlay.numberOfLines = 0;
+    _debugOverlay.font = [UIFont monospacedSystemFontOfSize:9 weight:UIFontWeightRegular];
+    _debugOverlay.textColor = [UIColor redColor];
+    _debugOverlay.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.9];
+    _debugOverlay.accessibilityElementsHidden = YES;
+    _debugOverlay.userInteractionEnabled = NO;
+    [self addSubview:_debugOverlay];
+    [self _dbg:@"init"];
   }
   return self;
 }
 
+- (void)layoutSubviews
+{
+  [super layoutSubviews];
+  _debugOverlay.frame = CGRectMake(0, 0, self.bounds.size.width, 220);
+  [self bringSubviewToFront:_debugOverlay];
+}
+
+- (void)_dbg:(NSString *)msg
+{
+  [_debugLog addObject:msg];
+  while (_debugLog.count > 18) {
+    [_debugLog removeObjectAtIndex:0];
+  }
+  NSString *text = [_debugLog componentsJoinedByString:@"\n"];
+  if ([NSThread isMainThread]) {
+    _debugOverlay.text = text;
+  } else {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      self->_debugOverlay.text = text;
+    });
+  }
+}
+
 - (void)updateProps:(Props::Shared const &)props oldProps:(Props::Shared const &)oldProps
 {
-  // Call super FIRST so the base class doesn't overwrite our
-  // accessibilityCustomRotors when processing standard view props.
   [super updateProps:props oldProps:oldProps];
 
   const auto &newViewProps =
       *std::static_pointer_cast<AccessibilityCustomRotorsViewProps const>(props);
 
-  RCTLogWarn(@"[CustomRotors] updateProps: %lu rotors", (unsigned long)newViewProps.rotors.size());
-  fprintf(stderr, "[CustomRotors] updateProps: %lu rotors\n", (unsigned long)newViewProps.rotors.size());
+  [self _dbg:[NSString stringWithFormat:@"updateProps: %lu rotors", (unsigned long)newViewProps.rotors.size()]];
 
   NSMutableArray<UIAccessibilityCustomRotor *> *nativeRotors = [NSMutableArray array];
 
@@ -55,8 +86,7 @@ using namespace facebook::react;
         @"label" : [NSString stringWithUTF8String:item.label.c_str()],
       }];
     }
-    RCTLogWarn(@"[CustomRotors]   rotor '%@' has %lu items", rotorName, (unsigned long)items.count);
-    fprintf(stderr, "[CustomRotors]   rotor '%s' has %lu items\n", rotorName.UTF8String, (unsigned long)items.count);
+    [self _dbg:[NSString stringWithFormat:@"  '%@': %lu items", rotorName, (unsigned long)items.count]];
 
     __weak AccessibilityCustomRotorsView *weakSelf = self;
     UIAccessibilityCustomRotor *nativeRotor = [[UIAccessibilityCustomRotor alloc]
@@ -74,8 +104,7 @@ using namespace facebook::react;
   }
 
   self.accessibilityCustomRotors = nativeRotors;
-  RCTLogWarn(@"[CustomRotors] accessibilityCustomRotors now: %lu", (unsigned long)self.accessibilityCustomRotors.count);
-  fprintf(stderr, "[CustomRotors] accessibilityCustomRotors now: %lu\n", (unsigned long)self.accessibilityCustomRotors.count);
+  [self _dbg:[NSString stringWithFormat:@"a11yCustomRotors set: %lu", (unsigned long)self.accessibilityCustomRotors.count]];
 }
 
 #pragma mark - Rotor lookup
@@ -85,14 +114,9 @@ using namespace facebook::react;
                   predicate:(UIAccessibilityCustomRotorSearchPredicate *)predicate
                   rotorName:(NSString *)rotorName
 {
-  RCTLogWarn(@"[CustomRotors] search '%@' dir=%@ items=%lu",
-             rotorName,
-             predicate.searchDirection == UIAccessibilityCustomRotorDirectionNext ? @"next" : @"prev",
-             (unsigned long)items.count);
-  fprintf(stderr, "[CustomRotors] search '%s' dir=%s items=%lu\n",
-          rotorName.UTF8String,
-          predicate.searchDirection == UIAccessibilityCustomRotorDirectionNext ? "next" : "prev",
-          (unsigned long)items.count);
+  [self _dbg:[NSString stringWithFormat:@"search '%@' dir=%@",
+              rotorName,
+              predicate.searchDirection == UIAccessibilityCustomRotorDirectionNext ? @"next" : @"prev"]];
 
   if (items.count == 0) {
     return nil;
@@ -105,24 +129,15 @@ using namespace facebook::react;
     if (view) {
       [resolved addObject:view];
       [labels addObject:item[@"label"]];
-      RCTLogWarn(@"[CustomRotors]   FOUND '%@' → %@ isA11y=%d frame=%@",
-                 item[@"testID"], NSStringFromClass(view.class), view.isAccessibilityElement, NSStringFromCGRect(view.frame));
-      fprintf(stderr, "[CustomRotors]   FOUND '%s'\n", [item[@"testID"] UTF8String]);
-    } else {
-      RCTLogWarn(@"[CustomRotors]   MISS '%@'", item[@"testID"]);
-      fprintf(stderr, "[CustomRotors]   MISS '%s'\n", [item[@"testID"] UTF8String]);
     }
   }
-  RCTLogWarn(@"[CustomRotors] resolved %lu/%lu; self.subviews=%lu",
-             (unsigned long)resolved.count,
-             (unsigned long)items.count,
-             (unsigned long)self.subviews.count);
-  fprintf(stderr, "[CustomRotors] resolved %lu/%lu; self.subviews=%lu\n",
-          (unsigned long)resolved.count, (unsigned long)items.count, (unsigned long)self.subviews.count);
+  [self _dbg:[NSString stringWithFormat:@"resolved %lu/%lu subv=%lu",
+              (unsigned long)resolved.count,
+              (unsigned long)items.count,
+              (unsigned long)self.subviews.count]];
 
   if (resolved.count == 0) {
-    RCTLogWarn(@"[CustomRotors] nothing matched — dumping subview tree:");
-    [self _dumpTreeFrom:self depth:0];
+    [self _dbg:@"ZERO MATCHES — see console for tree"];
     return nil;
   }
 
@@ -145,8 +160,7 @@ using namespace facebook::react;
   }
 
   if (nextIndex < 0 || nextIndex >= (NSInteger)resolved.count) {
-    RCTLogWarn(@"[CustomRotors] end of list (currentIndex=%ld, nextIndex=%ld)", (long)currentIndex, (long)nextIndex);
-    fprintf(stderr, "[CustomRotors] end of list (curr=%ld next=%ld)\n", (long)currentIndex, (long)nextIndex);
+    [self _dbg:[NSString stringWithFormat:@"end (curr=%ld next=%ld)", (long)currentIndex, (long)nextIndex]];
     return nil;
   }
 
@@ -158,9 +172,10 @@ using namespace facebook::react;
   if (label.length > 0 && target.accessibilityLabel.length == 0) {
     target.accessibilityLabel = label;
   }
-  RCTLogWarn(@"[CustomRotors] → RETURN index=%ld %@ isA11y=%d label='%@'",
-             (long)nextIndex, NSStringFromClass(target.class), target.isAccessibilityElement, target.accessibilityLabel ?: @"");
-  fprintf(stderr, "[CustomRotors] → RETURN index=%ld\n", (long)nextIndex);
+  [self _dbg:[NSString stringWithFormat:@"RETURN [%ld] %@ a11y=%d",
+              (long)nextIndex,
+              NSStringFromClass(target.class),
+              target.isAccessibilityElement]];
   return result;
 }
 
